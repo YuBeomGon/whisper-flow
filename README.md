@@ -29,7 +29,9 @@ Flow-matching based non-autoregressive ASR prototype that reuses the Whisper enc
    ```
 4. **Inference / Sampling**
    ```bash
-   python scripts/sample.py --checkpoint path/to.ckpt --audio path/to.wav
+   python -m src.cli.sample \
+     --config configs/inference/default.yaml \
+     --audio path/to/audio.wav
    ```
 
 ## Development

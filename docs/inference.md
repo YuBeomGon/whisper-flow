@@ -13,13 +13,14 @@ How to run the sampler and evaluate outputs.
 
 ## CLI Usage
 ```bash
-python scripts/sample.py \
-  --checkpoint checkpoints/epoch=XX.ckpt \
-  --audio path/to.wav \
-  --ode-steps 16
+python -m src.cli.sample \
+  --config configs/inference/default.yaml \
+  --audio path/to.wav
 ```
+- `configs/inference/default.yaml` should point to the desired checkpoint and the training config.
+- Override `--language` to force a specific language token if needed.
 
 ## Debugging Tips
 - Inspect intermediate latents via MLflow artifacts.
 - Compare multiple step counts to study accuracy vs latency.
-
+- Ensure the tokenizer prefix matches the training task (transcribe vs translate).

@@ -66,3 +66,21 @@ class WhisperTokenizerHelper:
         token_mask_tensor = torch.tensor(token_mask, dtype=torch.float32)
         flow_mask_tensor = torch.tensor(flow_mask, dtype=torch.float32)
         return tokens, token_mask_tensor, flow_mask_tensor
+
+    def build_sampling_tokens(
+        self, language: Optional[str]
+    ) -> Tuple[torch.LongTensor, torch.FloatTensor, torch.FloatTensor, int]:
+        """Create prefix tokens/masks for inference."""
+        prefix = self.build_prefix(language)
+        prefix_len = len(prefix)
+        if prefix_len >= self.max_text_tokens:
+            raise ValueError("Prefix consumes the entire token budget.")
+
+        token_ids = prefix + [self.pad_id] * (self.max_text_tokens - prefix_len)
+        token_mask = [1.0] * prefix_len + [1.0] * (self.max_text_tokens - prefix_len)
+        flow_mask = [0.0] * prefix_len + [1.0] * (self.max_text_tokens - prefix_len)
+
+        tokens = torch.tensor(token_ids, dtype=torch.long)
+        token_mask_tensor = torch.tensor(token_mask, dtype=torch.float32)
+        flow_mask_tensor = torch.tensor(flow_mask, dtype=torch.float32)
+        return tokens, token_mask_tensor, flow_mask_tensor, prefix_len

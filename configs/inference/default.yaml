@@ -1,5 +1,6 @@
 # Default inference configuration
-checkpoint: checkpoints/libri100/latest.ckpt
+checkpoint: checkpoints/libri100/flow-whisper-epoch=07.ckpt
+train_config: configs/train/libri100.yaml
 audio_sample_rate: 16000
 max_text_tokens: 448
 
