@@ -1,0 +1,53 @@
+# LibriSpeech train-clean-100 data configuration
+dataset:
+  name: librispeech_train_clean_100
+  root: data/librispeech
+  manifests:
+    train: data/manifests/librispeech/train-clean-100.jsonl
+    val: data/manifests/librispeech/dev-clean.jsonl
+    test: data/manifests/librispeech/test-clean.jsonl
+  sample_rate: 16000
+  max_duration_s: 30.0
+  normalize_text: true
+  synthetic: false
+  dummy_samples:
+    train: 512
+    val: 64
+    test: 64
+  text_column: text
+  audio_column: audio_path
+  language_column: language
+
+tokenizer:
+  hf_id: openai/whisper-small
+  # cache_dir: ~/.cache/huggingface
+  max_text_tokens: 448
+  vocab_size: 51865
+  pad_token_id: 0
+  eot_token_id: 50257
+  prefix:
+    language: en
+    task: transcribe
+    add_start_token: true
+    no_timestamps: false
+
+dataloader:
+  train:
+    batch_size: 8
+    num_workers: 8
+    shuffle: true
+  eval:
+    batch_size: 4
+    num_workers: 4
+    shuffle: false
+
+features:
+  n_mels: 80
+  hop_length: 160
+  win_length: 400
+  fmin: 0
+  fmax: 8000
+
+notes: |
+  - All audio files should be resampled to 16 kHz mono.
+  - Prefix tokens (<|startoftranscript|>, language, task) are injected per-example and excluded from noise.

@@ -1,0 +1,26 @@
+# Default inference configuration
+checkpoint: checkpoints/libri100/latest.ckpt
+audio_sample_rate: 16000
+max_text_tokens: 448
+
+sampler:
+  method: euler
+  steps: 16
+  step_schedule: linear
+  temperature: 1.0
+
+decoding:
+  strategy: greedy
+  return_timestamps: true
+  strip_after_eot: true
+
+prefix:
+  language: en
+  task: transcribe
+
+output:
+  save_transcript: outputs/transcripts.jsonl
+  save_tokens: true
+
+notes: |
+  Adjust sampler steps/temperature for quality-latency trade-offs. Use the same prefix tokens as training.

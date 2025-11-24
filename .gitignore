@@ -1,0 +1,36 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+
+# Data and artifacts
+data/raw/
+data/manifests/
+mlruns/
+checkpoints/
+
+# Logs
+logs/
+wandb/
+
+# Notebooks
+notebooks/
+**/.ipynb_checkpoints/
+
+# Editor/OS
+.DS_Store
+.vscode/
+.idea/
+
+# Generated manifests/scripts outputs
+outputs/

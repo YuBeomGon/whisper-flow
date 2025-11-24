@@ -1,0 +1,10 @@
+# Whisper encoder configuration
+hf_id: openai/whisper-small
+# cache_dir: ~/.cache/huggingface
+freeze: true
+dtype: float32
+use_lora: false
+gradient_checkpointing: false
+
+notes: |
+  Encoder stays frozen for Libri100 bring-up. Enable adapters or partial unfreeze later if needed.

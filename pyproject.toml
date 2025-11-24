@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flow-whisper"
+version = "0.1.0"
+description = "Flow-matching Whisper decoder prototype"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | build
+  | dist
+  | data
+  | mlruns
+)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "scripts"]
+exclude = ["data", "mlruns", "checkpoints"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E203", "E501"]
+
