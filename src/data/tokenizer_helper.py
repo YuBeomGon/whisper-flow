@@ -1,3 +1,8 @@
+"""
+File: src/data/tokenizer_helper.py
+Role: Wraps the Whisper tokenizer to build prefixes, training masks, and inference sampling tokens.
+"""
+
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple

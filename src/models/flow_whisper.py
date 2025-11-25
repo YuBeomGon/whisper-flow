@@ -1,3 +1,8 @@
+"""
+File: src/models/flow_whisper.py
+Role: Wraps the Whisper encoder with a flow-matching decoder/velocity head for training/inference.
+"""
+
 from __future__ import annotations
 
 from typing import Dict

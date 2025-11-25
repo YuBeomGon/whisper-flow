@@ -1,3 +1,8 @@
+"""
+File: src/main.py
+Role: Bootstrapper that wires config loading, loggers, and the Lightning Trainer for training runs.
+"""
+
 from __future__ import annotations
 
 import os

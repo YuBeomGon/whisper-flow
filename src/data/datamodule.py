@@ -1,3 +1,8 @@
+"""
+File: src/data/datamodule.py
+Role: Lightning DataModule that prepares tokenizer/feature extractors and exposes LibriSpeech loaders.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional

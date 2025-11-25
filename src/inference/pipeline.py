@@ -1,3 +1,8 @@
+"""
+File: src/inference/pipeline.py
+Role: Implements the end-to-end flow sampling path: audio preprocessing, ODE steps, and token decoding.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

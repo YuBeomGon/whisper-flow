@@ -1,3 +1,8 @@
+"""
+File: src/evaluation/evaluator.py
+Role: Iterates over manifest entries, runs inference, and computes aggregate WER/CER metrics.
+"""
+
 from __future__ import annotations
 
 import json

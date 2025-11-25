@@ -1,3 +1,8 @@
+"""
+File: src/cli/sample.py
+Role: Command-line interface to run single-sample flow inference using a checkpoint and audio file.
+"""
+
 from __future__ import annotations
 
 import argparse

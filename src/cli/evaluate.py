@@ -1,3 +1,8 @@
+"""
+File: src/cli/evaluate.py
+Role: CLI utility to run manifest-level inference and report WER/CER for a checkpoint.
+"""
+
 from __future__ import annotations
 
 import argparse

@@ -1,3 +1,8 @@
+"""
+File: src/data/dummy_dataset.py
+Role: Provides a random LibriSpeech-shaped dataset for smoke testing without real manifests.
+"""
+
 from __future__ import annotations
 
 import random

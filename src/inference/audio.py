@@ -1,3 +1,8 @@
+"""
+File: src/inference/audio.py
+Role: Handles waveform loading/resampling prior to feature extraction for inference.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

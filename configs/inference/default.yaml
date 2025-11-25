@@ -1,12 +1,12 @@
 # Default inference configuration
-checkpoint: checkpoints/libri100/flow-whisper-epoch=08.ckpt
+checkpoint: checkpoints/libri100/flow-whisper-epoch=38.ckpt
 train_config: configs/train/libri100.yaml
 audio_sample_rate: 16000
 max_text_tokens: 448
 
 sampler:
   method: euler
-  steps: 16
+  steps: 32
   step_schedule: linear
   temperature: 1.0
 

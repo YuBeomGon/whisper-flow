@@ -1,3 +1,8 @@
+"""
+File: src/models/decoder/flow_decoder.py
+Role: Provides the time-conditioned Whisper decoder variant used to predict flow velocities.
+"""
+
 from __future__ import annotations
 
 import math

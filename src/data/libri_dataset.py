@@ -1,3 +1,8 @@
+"""
+File: src/data/libri_dataset.py
+Role: Loads LibriSpeech manifest JSONL rows, processes audio/text, and outputs tensors for the model.
+"""
+
 from __future__ import annotations
 
 import json

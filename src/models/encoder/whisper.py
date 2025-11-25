@@ -1,3 +1,8 @@
+"""
+File: src/models/encoder/whisper.py
+Role: Minimal Whisper-like encoder stub used for experimentation/testing when full model isn't loaded.
+"""
+
 from __future__ import annotations
 
 from typing import Dict

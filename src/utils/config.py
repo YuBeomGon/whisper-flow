@@ -1,3 +1,8 @@
+"""
+File: src/utils/config.py
+Role: Helpers for parsing YAML configs and expanding training/inference configuration dictionaries.
+"""
+
 import argparse
 from pathlib import Path
 from typing import Any, Dict

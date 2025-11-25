@@ -1,3 +1,8 @@
+"""
+File: src/training/module.py
+Role: LightningModule that wraps FlowMatchingModel, computes flow loss, and configures optimizers/schedulers.
+"""
+
 from __future__ import annotations
 
 import math
