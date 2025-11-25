@@ -14,9 +14,18 @@ model_configs:
   decoder: configs/model/flow_decoder.yaml
 
 loss:
-  use_mse: true
-  use_ce: true
-  ce_weight: 0.9
+  mask_to_gt: true
+  inverse_t_weight: true
+
+masking:
+  ratio_range: [0.05, 1.0]
+  min_masks: 1
+
+stepwise:
+  enabled: false
+  hi_ratio: [0.4, 0.95]
+  lo_factor: [0.5, 0.9]
+  loss_weight: 0.1
 
 optimizer:
   name: adamw

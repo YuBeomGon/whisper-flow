@@ -5,11 +5,13 @@ Role: Wraps the Whisper encoder with a flow-matching decoder/velocity head for t
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
-from torch import nn
+import torch.nn as nn
 from transformers import WhisperModel
+
+from src.data.tokenizer_helper import WhisperTokenizerHelper
 
 from .decoder.flow_decoder import FlowWhisperDecoder, SinusoidalTimeEmbedding
 
@@ -24,6 +26,10 @@ class FlowMatchingModel(nn.Module):
         decoder_cfg: Dict,
     ):
         super().__init__()
+        tokenizer_cfg = data_cfg.get("tokenizer", {})
+        self.tokenizer_helper = WhisperTokenizerHelper(tokenizer_cfg)
+        self.mask_token_id = self.tokenizer_helper.mask_id
+
         hf_id = encoder_cfg.get("hf_id", "openai/whisper-small")
         cache_dir = encoder_cfg.get("cache_dir")
         torch_dtype = getattr(torch, encoder_cfg.get("dtype", "float32"))
@@ -36,37 +42,36 @@ class FlowMatchingModel(nn.Module):
             for param in self.whisper.encoder.parameters():
                 param.requires_grad = False
 
+        vocab_size = len(self.tokenizer_helper.tokenizer)
+        self.whisper.resize_token_embeddings(vocab_size)
+
         self.encoder = self.whisper.encoder
         self.token_embedding = self.whisper.decoder.embed_tokens
 
         self.flow_decoder = FlowWhisperDecoder(self.whisper.config)
         self.flow_decoder.load_state_dict(self.whisper.decoder.state_dict())
-        self.velocity_head = nn.Linear(self.whisper.config.d_model, self.whisper.config.d_model)
 
         time_dim = decoder_cfg.get("time_embedding", {}).get(
             "dim", self.whisper.config.d_model // 2
         )
         self.time_embedding = SinusoidalTimeEmbedding(self.whisper.config.d_model, time_dim)
 
-    def forward(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        tokens = batch["tokens"]
-        token_mask = batch["token_mask"]
-        flow_mask = batch["flow_mask"]
-        features = batch["input_features"]
-
+    def encode(self, features: torch.Tensor) -> torch.Tensor:
         encoder_dtype = next(self.encoder.parameters()).dtype
         features = features.to(encoder_dtype)
         encoder_outputs = self.encoder(features)
-        encoder_hidden_states = encoder_outputs.last_hidden_state
+        return encoder_outputs.last_hidden_state
 
-        token_emb = self.token_embedding(tokens)
-        noise = torch.randn_like(token_emb)
-        t = torch.rand(tokens.size(0), 1, 1, device=tokens.device)
-        flow_mask_exp = flow_mask.unsqueeze(-1)
-        mixed = token_emb * (1 - flow_mask_exp * t) + noise * (flow_mask_exp * t)
-
-        time_emb = self.time_embedding(t.view(tokens.size(0), 1)).unsqueeze(1)
-        decoder_inputs = mixed + time_emb
+    def decode(
+        self,
+        decoder_tokens: torch.Tensor,
+        token_mask: torch.Tensor,
+        encoder_hidden_states: torch.Tensor,
+        t_values: torch.Tensor,
+    ) -> torch.Tensor:
+        token_emb = self.token_embedding(decoder_tokens)
+        time_emb = self.time_embedding(t_values.view(-1, 1)).unsqueeze(1)
+        decoder_inputs = token_emb + time_emb
 
         attention_mask = token_mask.to(decoder_inputs.device)
         decoder_outputs = self.flow_decoder(
@@ -78,14 +83,25 @@ class FlowMatchingModel(nn.Module):
             return_dict=True,
         )
         decoded = decoder_outputs.last_hidden_state
-        v_pred = self.velocity_head(decoded)
-        v_target = flow_mask_exp * (noise - token_emb)
+        logits = torch.matmul(decoded, self.token_embedding.weight.T)
+        return logits
 
+    def forward(
+        self,
+        decoder_tokens: torch.Tensor,
+        token_mask: torch.Tensor,
+        features: Optional[torch.Tensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        t_values: Optional[torch.Tensor] = None,
+    ) -> Dict[str, torch.Tensor]:
+        if t_values is None:
+            raise ValueError("t_values must be provided")
+        if encoder_hidden_states is None:
+            if features is None:
+                raise ValueError("either features or encoder_hidden_states must be provided")
+            encoder_hidden_states = self.encode(features)
+        logits = self.decode(decoder_tokens, token_mask, encoder_hidden_states, t_values)
         return {
-            "v_pred": v_pred,
-            "v_target": v_target,
-            "flow_mask": flow_mask,
-            "token_mask": token_mask,
-            "tokens": tokens,
-            "noise": noise,
+            "logits": logits,
+            "encoder_hidden_states": encoder_hidden_states,
         }

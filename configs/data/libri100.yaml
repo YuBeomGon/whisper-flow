@@ -25,6 +25,7 @@ tokenizer:
   vocab_size: 51865
   pad_token_id: 0
   eot_token_id: 50257
+  mask_token: "<|mask|>"
   prefix:
     language: en
     task: transcribe

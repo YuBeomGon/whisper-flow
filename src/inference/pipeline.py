@@ -5,6 +5,7 @@ Role: Implements the end-to-end flow sampling path: audio preprocessing, ODE ste
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -38,6 +39,16 @@ class FlowInferencePipeline:
         self.sampler_cfg = sampler_cfg
         self.pad_id = tokenizer_cfg.get("pad_token_id", self.tokenizer_helper.pad_id)
         self.eot_id = tokenizer_cfg.get("eot_token_id", self.tokenizer_helper.eot_id)
+        self.mask_token_id = self.tokenizer_helper.mask_id
+        if self.mask_token_id is None:
+            raise ValueError("Mask token must be defined for discrete decoding")
+        schedule = list(sampler_cfg.get("mask_schedule", [1.0, 0.75, 0.5, 0.25, 0.0]))
+        schedule = sorted(set(schedule), reverse=True)
+        if schedule[0] != 1.0:
+            schedule.insert(0, 1.0)
+        if schedule[-1] != 0.0:
+            schedule.append(0.0)
+        self.mask_schedule = schedule
 
     @torch.no_grad()
     def __call__(self, audio_path: str | Path, language: Optional[str] = None) -> Dict[str, str]:
@@ -51,69 +62,67 @@ class FlowInferencePipeline:
         )
         prefix_tokens = prefix_tokens.to(self.device).unsqueeze(0)
         token_mask = token_mask.to(self.device).unsqueeze(0)
-        flow_mask = flow_mask.to(self.device).unsqueeze(0).unsqueeze(-1)
+        flow_mask = flow_mask.to(self.device).unsqueeze(0)
 
-        prefix_emb = self.model.token_embedding(prefix_tokens)
-        encoder_outputs = self.model.encoder(features)
-        encoder_hidden_states = encoder_outputs.last_hidden_state
-
-        latent = self._sample_latent(
-            encoder_hidden_states,
-            prefix_emb,
+        encoder_hidden_states = self.model.encode(features)
+        decoded_tokens = self._iterative_decode(
+            prefix_tokens,
             token_mask,
             flow_mask,
+            encoder_hidden_states,
         )
-        predicted_ids = self._decode_latent(latent, prefix_len)
+        predicted_ids = self._finalize_tokens(decoded_tokens, prefix_len)
         text = self.tokenizer_helper.tokenizer.decode(predicted_ids)
         return {
             "text": text,
             "tokens": " ".join(map(str, predicted_ids)),
         }
 
-    def _sample_latent(
+    def _iterative_decode(
         self,
-        encoder_hidden_states: torch.Tensor,
-        prefix_emb: torch.Tensor,
+        tokens: torch.Tensor,
         token_mask: torch.Tensor,
         flow_mask: torch.Tensor,
+        encoder_hidden_states: torch.Tensor,
     ) -> torch.Tensor:
-        steps = max(1, int(self.sampler_cfg.get("steps", 16)))
-        device = self.device
-        # hidden_size = prefix_emb.size(-1)
-        latent = torch.randn_like(prefix_emb, device=device)
-        latent = latent * flow_mask + prefix_emb * (1.0 - flow_mask)
+        decoded = tokens.clone()
+        candidate_mask = flow_mask.bool()
+        decoded[candidate_mask] = self.mask_token_id
+        total_candidates = int(candidate_mask.sum().item())
+        if total_candidates == 0:
+            return decoded
 
-        t_values = torch.linspace(1.0, 0.0, steps + 1, device=device)
-        for idx in range(steps):
-            t_curr = t_values[idx]
-            t_next = t_values[idx + 1]
-            delta = t_curr - t_next
-            t_tensor = torch.full((1, 1), t_curr.item(), device=device)
-            time_emb = self.model.time_embedding(t_tensor).unsqueeze(1)
-            decoder_inputs = latent + time_emb
+        for target_ratio in self.mask_schedule[1:]:
+            mask_positions = (decoded == self.mask_token_id) & candidate_mask
+            current_mask = int(mask_positions.sum().item())
+            if current_mask == 0:
+                break
+            current_ratio = current_mask / total_candidates
+            t_tensor = torch.tensor([current_ratio], device=self.device)
+            logits = self.model.decode(decoded, token_mask, encoder_hidden_states, t_tensor)
 
-            decoder_outputs = self.model.flow_decoder(
-                inputs_embeds=decoder_inputs,
-                attention_mask=token_mask,
-                encoder_hidden_states=encoder_hidden_states,
-                use_cache=False,
-                output_attentions=False,
-                return_dict=True,
-            )
-            velocity = self.model.velocity_head(decoder_outputs.last_hidden_state)
-            latent = latent - delta * velocity
-            latent = latent * flow_mask + prefix_emb * (1.0 - flow_mask)
-        return latent
+            target_mask = int(max(0, math.ceil(target_ratio * total_candidates)))
+            to_reveal = max(0, current_mask - target_mask)
+            if to_reveal == 0:
+                continue
+            masked_indices = torch.nonzero(mask_positions[0], as_tuple=False).squeeze(-1)
+            masked_logits = logits[0, masked_indices]
+            values, pred_ids = torch.max(masked_logits, dim=-1)
+            topk = torch.argsort(values, descending=True)[:to_reveal]
+            chosen_positions = masked_indices[topk]
+            chosen_tokens = pred_ids[topk]
+            decoded[0, chosen_positions] = chosen_tokens
 
-    def _decode_latent(self, latent: torch.Tensor, prefix_len: int) -> list[int]:
-        logits = torch.matmul(latent, self.model.token_embedding.weight.T)
-        token_ids = torch.argmax(logits, dim=-1)[0].tolist()
-        generated = token_ids[prefix_len:]
+        return decoded
+
+    def _finalize_tokens(self, tokens: torch.Tensor, prefix_len: int) -> list[int]:
+        seq = tokens[0].tolist()
+        generated = seq[prefix_len:]
         trimmed: list[int] = []
         for tid in generated:
             if tid == self.eot_id:
                 break
-            if tid == self.pad_id:
+            if tid in (self.pad_id, self.mask_token_id):
                 continue
             trimmed.append(tid)
         return trimmed

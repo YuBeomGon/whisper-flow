@@ -28,6 +28,14 @@ class WhisperTokenizerHelper:
         self.max_text_tokens = cfg.get("max_text_tokens", 448)
         self.pad_id = cfg.get("pad_token_id", self.tokenizer.pad_token_id)
         self.eot_id = cfg.get("eot_token_id", self.tokenizer.eos_token_id)
+        mask_token = cfg.get("mask_token")
+        if mask_token:
+            self.tokenizer.add_special_tokens({"additional_special_tokens": [mask_token]})
+            mask_id = self.tokenizer.convert_tokens_to_ids(mask_token)
+        else:
+            mask_id = None
+        self.mask_token = mask_token
+        self.mask_id = mask_id
         prefix_cfg = cfg.get("prefix", {})
         self.default_language = prefix_cfg.get("language")
         self.task = prefix_cfg.get("task", "transcribe")
