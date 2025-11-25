@@ -20,6 +20,16 @@ python -m src.cli.sample \
 - `configs/inference/default.yaml` should point to the desired checkpoint and the training config.
 - Override `--language` to force a specific language token if needed.
 
+## Batch Evaluation
+- Evaluate an entire split and capture WER/CER:
+  ```bash
+  python -m src.cli.evaluate \
+    --config configs/inference/default.yaml \
+    --split test \
+    --output outputs/eval/test-clean.jsonl
+  ```
+- Metrics print to stdout; optionally review per-utterance predictions in the JSONL.
+
 ## Debugging Tips
 - Inspect intermediate latents via MLflow artifacts.
 - Compare multiple step counts to study accuracy vs latency.

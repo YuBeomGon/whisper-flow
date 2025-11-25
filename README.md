@@ -33,6 +33,13 @@ Flow-matching based non-autoregressive ASR prototype that reuses the Whisper enc
      --config configs/inference/default.yaml \
      --audio path/to/audio.wav
    ```
+5. **Batch Evaluation (WER/CER)**
+   ```bash
+   python -m src.cli.evaluate \
+     --config configs/inference/default.yaml \
+     --split test \
+     --output outputs/eval/test-clean.jsonl
+   ```
 
 ## Development
 - Install dev tools from `requirements.txt` (includes Black/Ruff).

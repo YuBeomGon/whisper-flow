@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 
 # import torchaudio
-# torchaudio.set_audio_backend("sox_io")
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
