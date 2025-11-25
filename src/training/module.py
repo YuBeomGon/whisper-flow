@@ -10,6 +10,7 @@ from typing import Any, Dict
 
 import pytorch_lightning as pl
 import torch
+import torch.nn.functional as F
 from src.models.flow_whisper import FlowMatchingModel
 
 
@@ -35,13 +36,42 @@ class FlowMatchingModule(pl.LightningModule):
         return self.model(batch)
 
     def compute_loss(self, outputs: Dict[str, torch.Tensor]) -> torch.Tensor:
-        v_pred = outputs["v_pred"]
-        v_target = outputs["v_target"]
-        mask = outputs["flow_mask"].unsqueeze(-1)
+        loss_cfg = self.train_cfg.get("loss", {})
+        loss_terms: list[torch.Tensor] = []
 
-        mse = (v_pred - v_target) ** 2
-        loss = (mse * mask).sum() / mask.sum().clamp_min(1.0)
-        return loss
+        if loss_cfg.get("use_mse", True):
+            v_pred = outputs["v_pred"]
+            v_target = outputs["v_target"]
+            mask = outputs["flow_mask"].unsqueeze(-1)
+            mse = (v_pred - v_target) ** 2
+            mse_loss = (mse * mask).sum() / mask.sum().clamp_min(1.0)
+            loss_terms.append(mse_loss)
+
+        if loss_cfg.get("use_ce", False):
+            logits = self._compute_logits(outputs)
+            tokens = outputs["tokens"]
+            flow_mask = outputs["flow_mask"]
+            ce = F.cross_entropy(
+                logits.view(-1, logits.size(-1)),
+                tokens.view(-1),
+                reduction="none",
+            ).view_as(flow_mask)
+            ce_loss = (ce * flow_mask).sum() / flow_mask.sum().clamp_min(1.0)
+            ce_weight = float(loss_cfg.get("ce_weight", 1.0))
+            loss_terms.append(ce_weight * ce_loss)
+
+        if not loss_terms:
+            raise ValueError("At least one loss term must be enabled.")
+
+        return sum(loss_terms)
+
+    def _compute_logits(self, outputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        v_pred = outputs["v_pred"]
+        noise = outputs["noise"]
+        x0_hat = noise - v_pred
+        embedding_weight = self.model.token_embedding.weight
+        logits = torch.matmul(x0_hat, embedding_weight.T)
+        return logits
 
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         outputs = self(batch)

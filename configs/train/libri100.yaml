@@ -13,6 +13,11 @@ model_configs:
   encoder: configs/model/whisper_encoder.yaml
   decoder: configs/model/flow_decoder.yaml
 
+loss:
+  use_mse: true
+  use_ce: true
+  ce_weight: 0.9
+
 optimizer:
   name: adamw
   lr: 3.0e-4

@@ -86,4 +86,6 @@ class FlowMatchingModel(nn.Module):
             "v_target": v_target,
             "flow_mask": flow_mask,
             "token_mask": token_mask,
+            "tokens": tokens,
+            "noise": noise,
         }
