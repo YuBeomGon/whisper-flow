@@ -1,13 +1,13 @@
-# Flow Matching Whisper Decoder
+# Masked Diffusion Whisper Decoder
 
-Flow-matching based non-autoregressive ASR prototype that reuses the Whisper encoder as the acoustic front-end and adapts the Whisper decoder weights into a full-attention flow decoder that transports Gaussian noise to token embeddings, targeting LibriSpeech train-clean-100 for the initial bring-up.
+Discrete masked-diffusion ASR prototype that reuses the Whisper encoder as the acoustic front-end and adapts the Whisper decoder weights into a full-attention diffusion decoder that iteratively unmasks tokens, now targeting LibriSpeech train-960 for the main bring-up.
 
 ## Overview
 - **Encoder** – frozen Whisper encoder checkpoint loaded via Hugging Face Transformers (optional unfreeze hooks later).
-- **Decoder** – Whisper decoder blocks with the causal mask removed, augmented with time-conditioning to predict flow velocities in continuous token-embedding space.
-- **Training objective** – linear path flow-matching MSE between latent velocity and target `(Z₁ - X₀)`; no distillation or advanced probability paths in v0.
+- **Decoder** – Whisper decoder blocks with the causal mask removed, augmented with time-conditioning to run a masked diffusion process over discrete tokens (Whisfusion/MDM style).
+- **Training objective** – cross-entropy on `[MASK]` positions with inverse-`t` weighting and staged mask ratios (low→mid→high mask) plus optional stepwise `y_{t_hi}→y_{t_lo}` loss.
 - **Logging** – MLflow tracking (default local backend) plus optional TensorBoard.
-- **Current scope** – LibriSpeech 100h for bring-up, multilingual/timestamp fidelity and distillation come later.
+- **Current scope** – LibriSpeech train-960 for bring-up; multilingual/timestamp fidelity and distillation come later.
 - **Training stack** – PyTorch Lightning for the training loop, Hugging Face Transformers for model/tokenizer utilities.
 
 ## Getting Started
@@ -19,8 +19,8 @@ Flow-matching based non-autoregressive ASR prototype that reuses the Whisper enc
    pip install -r requirements.txt  # PyTorch, torchaudio, pytorch-lightning, transformers, mlflow, etc.
    ```
 2. **Data**
-   - Download & extract splits: `./scripts/download_librispeech.sh data/raw/librispeech`.
-   - Create manifests via `python scripts/make_manifest.py --root data/raw/librispeech/train-clean-100 --output data/manifests/librispeech/train-clean-100.jsonl` (repeat for other splits; details in `docs/data.md`).
+   - Download & extract LibriSpeech splits: `./scripts/download_librispeech.sh data/raw/librispeech` (train-clean-100/360, train-other-500, dev/test clean+other).
+   - Create manifests via `python scripts/make_manifest.py --root data/raw/librispeech/train-clean-100 --output data/manifests/librispeech/train-clean-100.jsonl` etc., then concatenate into `train-960.jsonl`, `dev-all.jsonl`, `test-all.jsonl` (details in `docs/data.md`).
    - Download a Whisper checkpoint (e.g., `openai/whisper-small`) into the Hugging Face cache or custom path.
 3. **Configuration & Training**
    ```bash
@@ -57,22 +57,21 @@ Flow-matching based non-autoregressive ASR prototype that reuses the Whisper enc
 - `src/`
   - `data/` – manifests, tokenizer wrappers, prefix builders.
   - `models/encoder/` – Whisper encoder loading/freeze utilities.
-  - `models/decoder/` – flow decoder blocks, time embedding modules.
-  - `flow/` – path definitions, ODE solvers, sampling utilities.
-  - `training/` – Lightning modules, losses, optimizers.
-  - `inference/` – decoding pipelines, length/EOT handling, logging hooks.
+  - `models/decoder/` – masked diffusion decoder blocks, time embedding modules.
+  - `training/` – Lightning modules, staged masking + loss logic, optimizers.
+  - `inference/` – iterative `[MASK]` decoding pipelines, length/EOT handling, logging hooks.
   - `evaluation/` – WER/CER metrics, timestamp scoring.
   - `utils/` – shared helpers, config parsing.
 - `tests/` – smoke/unit tests for data + model components.
 
 ## Notes & Roadmap
-- Padding positions are masked (loss + attention) so flow targets cover only meaningful tokens; EOT trimming during inference keeps decoding simple.
-- Special tokens (language/task/start) are treated as fixed prefixes with no injected noise, whereas text/timestamp/EOT tokens participate in flow training.
+- Padding positions are masked (loss + attention) so objectives cover only meaningful tokens; prefixes stay deterministic.
+- `[MASK]` ratio schedule (low→mid→high) keeps training aligned with the inference trajectory; optional stepwise loss (`y_{t_hi}→y_{t_lo}`) can be enabled.
 - Immediate next steps:
-  - [ ] Implement linear-path flow training loop with MLflow logging.
-  - [ ] Bring up inference sampler (Euler + configurable steps).
-  - [ ] Document data/model details under `docs/`.
-- Future enhancements (not in v0): AR-to-flow distillation, audio-conditioned flow paths, EMA samplers, multilingual fine-tuning, better timestamp supervision.
+  - [ ] Tighten discrete diffusion docs (data/model/training/inference).
+  - [ ] Add top-k/temperature/PDD-style sampler support.
+  - [ ] Instrument train/inference parity on staged mask ratios.
+- Future enhancements (not in v0): AR-to-diffusion distillation, audio-conditioned middle distributions, EMA samplers, multilingual fine-tuning, better timestamp supervision.
 
 ## License
 - Whisper checkpoints follow the original OpenAI license; ensure compliance when distributing weights.

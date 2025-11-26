@@ -3,13 +3,15 @@
 How to run the sampler and evaluate outputs.
 
 ## Sampler
-- Initialize latent `X_1 ~ 𝓝(0, I)`.
-- Use Euler or Heun ODE solver with configurable step count (e.g., 8, 16, 32).
-- Apply attention/flow masks to keep prefix tokens fixed during integration.
+- Initialize all non-prefix positions as `[MASK]`.
+- Define a mask schedule (e.g., `[1.0, 0.9, 0.8, ..., 0.0]`) that determines how many masks remain after each iteration.
+- At each step:
+  - Run the discrete diffusion decoder with the current sequence and timestep.
+  - Select the `to_reveal = current_mask - target_mask` most confident masked tokens (greedy for now) and unmask them.
+  - Repeat until no masks remain.
 
 ## Decoding
-- After reaching `X_0`, compute logits via `X_0 Eᵀ`, apply softmax, and pick argmax or sample.
-- Trim at first `<|endoftext|>` token; optionally keep timestamps for diagnostic purposes.
+- After the final step, trim output at the first `<|endoftext|>`, skipping `<|mask|>`/`<|pad|>` tokens; optionally keep timestamps for diagnostics.
 
 ## CLI Usage
 ```bash
@@ -31,6 +33,6 @@ python -m src.cli.sample \
 - Metrics print to stdout; optionally review per-utterance predictions in the JSONL.
 
 ## Debugging Tips
-- Inspect intermediate latents via MLflow artifacts.
-- Compare multiple step counts to study accuracy vs latency.
-- Ensure the tokenizer prefix matches the training task (transcribe vs translate).
+- Log per-step predictions / mask ratios to ensure the schedule is honored.
+- Compare multiple mask schedules for accuracy vs latency.
+- Make sure the tokenizer prefix matches the training task (transcribe vs translate).

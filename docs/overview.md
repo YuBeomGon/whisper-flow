@@ -1,20 +1,20 @@
 # Overview
 
-Prototype ASR system that keeps the Whisper encoder frozen, replaces the decoder with a flow-matching generator over token embeddings, and targets LibriSpeech train-clean-100 for bring-up. This document summarizes the scope, motivation, and high-level roadmap.
+Prototype ASR system that keeps the Whisper encoder frozen, replaces the decoder with a masked-diffusion generator over token embeddings, and targets LibriSpeech train-960 for bring-up. This document summarizes the scope, motivation, and high-level roadmap.
 
 ## Goals
-- Validate continuous flow matching on top of Whisper decoder weights without AR distillation.
-- Establish reproducible training/inference scripts with MLflow tracking.
-- Document data handling, tokenizer quirks, and padding/special-token strategy.
+- Validate Whisfusion-style discrete diffusion on top of Whisper decoder weights without AR distillation.
+- Establish reproducible training/inference scripts with staged mask ratios and MLflow tracking.
+- Document data handling (train-960), tokenizer quirks (explicit `[MASK]`), and padding/special-token strategy.
 
 ## Current Findings
-- Training loss (velocity MSE) drops steadily on Libri100 (≈60 → ≈5) yet decoding collapses even on training utterances. This indicates the model is reducing the average embedding error but not mapping to discrete tokens reliably.
-- Continuous MSE on top of frozen Whisper embeddings lets multiple tokens share “midpoint” vectors. Recent text diffusion/flow LMs avoid this by either (a) re-training embedding+rounding jointly or (b) operating directly in discrete/categorical space.
-- Before large architectural changes, we must add instrumentation:
-  - single-sample overfit + reconstruction test (check \(X_0 = Z_1 - v_\theta\)),
-  - GT-velocity ODE smoke test,
-  - train vs inference forward-parity comparison.
-- Plan to branch off for experiments (e.g., discrete diffusion/flow objectives or embedding+rounding losses) while keeping the current Whisper-flow pipeline as baseline.
+- Discrete masked diffusion with staged mask ratios reduces train-inference mismatch versus the previous continuous flow baseline.
+- High-mask samples (70–100%) and the optional stepwise loss are essential for inference stability; low-mask-only training collapses at sampling time.
+- Remaining work focuses on:
+  - logging mask ratio / stepwise trajectories,
+  - sampler upgrades (top-k, temperature, PDD),
+  - reducing NaN/grad explosion at later epochs (LR scaling, clipping).
+- Continuous flow documentation is kept only for historical reference; the active branch uses discrete diffusion throughout.
 
 ## Non-Goals (v0)
 - Matching full Whisper WER on large multilingual corpora.
