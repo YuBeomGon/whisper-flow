@@ -34,3 +34,7 @@ notebooks/
 
 # Generated manifests/scripts outputs
 outputs/
+
+# custom
+reference/
+mlrun
