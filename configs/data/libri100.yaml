@@ -3,9 +3,9 @@ dataset:
   name: librispeech_train_clean_100
   root: data/librispeech
   manifests:
-    train: data/manifests/librispeech/train-clean-100.jsonl
-    val: data/manifests/librispeech/dev-clean.jsonl
-    test: data/manifests/librispeech/test-clean.jsonl
+    train: data/manifests/librispeech/train-960.jsonl
+    val: data/manifests/librispeech/dev-all.jsonl
+    test: data/manifests/librispeech/test-all.jsonl
   sample_rate: 16000
   max_duration_s: 30.0
   normalize_text: true
