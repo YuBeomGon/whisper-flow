@@ -38,6 +38,11 @@ class FlowMatchingModule(pl.LightningModule):
         self.mask_token_id = tokenizer_helper.mask_id
         self.loss_cfg = train_cfg.get("loss", {})
         self.masking_cfg = train_cfg.get("masking", {})
+        schedule_cfg = self.masking_cfg.get("schedule", [])
+        self.masking_schedule = sorted(
+            schedule_cfg,
+            key=lambda item: item.get("start_epoch", 0),
+        )
         self.stepwise_cfg = train_cfg.get("stepwise", {})
         self.stepwise_enabled = bool(self.stepwise_cfg.get("enabled", False))
 
@@ -88,9 +93,37 @@ class FlowMatchingModule(pl.LightningModule):
             actual_ratios[idx] = num_to_mask / total
         return masked, mask_positions, actual_ratios
 
+    def _current_mask_ratio_range(self) -> tuple[float, float]:
+        if self.masking_schedule:
+            current_epoch = getattr(self, "current_epoch", 0)
+            selected = self.masking_schedule[0]
+            for entry in self.masking_schedule:
+                if current_epoch >= int(entry.get("start_epoch", 0)):
+                    selected = entry
+                else:
+                    break
+            if "ratio_range" in selected:
+                ratio = selected["ratio_range"]
+                return float(ratio[0]), float(ratio[1])
+        base_range = self.masking_cfg.get("ratio_range", [0.05, 1.0])
+        return float(base_range[0]), float(base_range[1])
+
+    def on_train_epoch_start(self) -> None:
+        min_ratio, max_ratio = self._current_mask_ratio_range()
+        device = self.device if hasattr(self, "device") else torch.device("cpu")
+        self.log(
+            "train/mask_ratio_min",
+            torch.tensor(min_ratio, device=device),
+            prog_bar=True,
+        )
+        self.log(
+            "train/mask_ratio_max",
+            torch.tensor(max_ratio, device=device),
+            prog_bar=True,
+        )
+
     def _sample_mask_to_gt(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        ratio_range = self.masking_cfg.get("ratio_range", [0.05, 1.0])
-        min_ratio, max_ratio = float(ratio_range[0]), float(ratio_range[1])
+        min_ratio, max_ratio = self._current_mask_ratio_range()
         min_masks = int(self.masking_cfg.get("min_masks", 1))
         tokens = batch["tokens"]
         candidate_mask = (batch["flow_mask"] > 0.5) & (batch["token_mask"] > 0.5)
