@@ -33,8 +33,12 @@ class SinusoidalTimeEmbedding(nn.Module):
 
     def forward(self, t: torch.Tensor) -> torch.Tensor:
         device = t.device
+        target_dtype = self.proj[0].weight.dtype
+        t = t.to(target_dtype)
         half_dim = self.embed_dim
-        freqs = torch.exp(torch.linspace(0, math.log(10000), half_dim, device=device))
+        freqs = torch.exp(
+            torch.linspace(0, math.log(10000), half_dim, device=device, dtype=target_dtype)
+        )
         angles = t.view(-1, 1) * freqs
         emb = torch.cat([torch.sin(angles), torch.cos(angles)], dim=-1)
         emb = self.proj(emb)

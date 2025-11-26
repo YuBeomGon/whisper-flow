@@ -70,7 +70,7 @@ class FlowMatchingModel(nn.Module):
         t_values: torch.Tensor,
     ) -> torch.Tensor:
         token_emb = self.token_embedding(decoder_tokens)
-        time_emb = self.time_embedding(t_values.view(-1, 1)).unsqueeze(1)
+        time_emb = self.time_embedding(t_values.view(-1, 1)).unsqueeze(1).to(token_emb.dtype)
         decoder_inputs = token_emb + time_emb
 
         attention_mask = token_mask.to(decoder_inputs.device)
