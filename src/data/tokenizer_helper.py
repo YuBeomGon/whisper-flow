@@ -41,6 +41,7 @@ class WhisperTokenizerHelper:
         self.task = prefix_cfg.get("task", "transcribe")
         self.add_start = prefix_cfg.get("add_start_token", True)
         self.no_timestamps = prefix_cfg.get("no_timestamps", False)
+        self.allowed_random_ids = self._build_allowed_random_ids()
 
     def build_prefix(self, language: Optional[str]) -> List[int]:
         lang = language or self.default_language
@@ -97,3 +98,8 @@ class WhisperTokenizerHelper:
         token_mask_tensor = torch.tensor(token_mask, dtype=torch.float32)
         flow_mask_tensor = torch.tensor(flow_mask, dtype=torch.float32)
         return tokens, token_mask_tensor, flow_mask_tensor, prefix_len
+    def _build_allowed_random_ids(self) -> List[int]:
+        special_ids = set(self.tokenizer.all_special_ids)
+        timestamp_ids = set(getattr(self.tokenizer, "timestamp_ids", lambda: [])())
+        forbidden = special_ids | timestamp_ids
+        return [tid for tid in range(len(self.tokenizer)) if tid not in forbidden]

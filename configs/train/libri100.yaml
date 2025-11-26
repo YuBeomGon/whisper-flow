@@ -2,7 +2,7 @@
 seed: 1337
 precision: 16-mixed
 accelerator: gpu
-devices: 6
+devices: 4
 strategy: ddp_find_unused_parameters_true # ddp_find_unused_parameters_true, deepspeed_stage_2 
 max_epochs: 20
 val_check_interval: 1.0
@@ -18,20 +18,24 @@ loss:
   inverse_t_weight: true
 
 masking:
-  ratio_range: [0.05, 1.0]
+  ratio_range: [0.1, 0.9]
   min_masks: 1
   schedule:
     - start_epoch: 0
       ratio_range: [0.05, 1.0]
-    - start_epoch: 2
-      ratio_range: [0.3, 1.0]
     - start_epoch: 4
+      ratio_range: [0.3, 1.0]
+    - start_epoch: 8
       ratio_range: [0.7, 1.0]
+  corruption:
+    mask: 0.8
+    random: 0.1
+    keep: 0.1
 
 stepwise:
-  enabled: false
-  hi_ratio: [0.4, 0.95]
-  lo_factor: [0.5, 0.9]
+  enabled: true
+  hi_ratio: [0.7, 0.95]
+  lo_factor: [0.6, 0.9]
   loss_weight: 0.1
 
 optimizer:

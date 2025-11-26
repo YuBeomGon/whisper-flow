@@ -7,7 +7,7 @@ Guidelines for running the Lightning training loop with MLflow logging.
 - Mixed precision + DDP handled by Lightning Trainer flags.
 
 ## Loss
-- Masked-token cross-entropy over `[MASK]` positions with optional inverse-`t` weighting.
+- Masked-token cross-entropy over corrupted positions (`[MASK]` or random replacements) with optional inverse-`t` weighting.
 - Optional stepwise loss (`y_{t_hi}→y_{t_lo}`) focusing on positions newly unmasked between two mask ratios.
 - Stage the mask ratios from low→mid→high so the model regularly trains on inference-like states.
 

@@ -36,6 +36,7 @@ class FlowMatchingModule(pl.LightningModule):
         if tokenizer_helper.mask_id is None:
             raise ValueError("Tokenizer must define a mask token for discrete training")
         self.mask_token_id = tokenizer_helper.mask_id
+        self.allowed_random_ids = tokenizer_helper.allowed_random_ids
         self.loss_cfg = train_cfg.get("loss", {})
         self.masking_cfg = train_cfg.get("masking", {})
         schedule_cfg = self.masking_cfg.get("schedule", [])
@@ -43,6 +44,21 @@ class FlowMatchingModule(pl.LightningModule):
             schedule_cfg,
             key=lambda item: item.get("start_epoch", 0),
         )
+        corruption_cfg = self.masking_cfg.get("corruption", {})
+        self.corruption_probs = {
+            "mask": float(corruption_cfg.get("mask", 1.0)),
+            "random": float(corruption_cfg.get("random", 0.0)),
+            "keep": float(corruption_cfg.get("keep", 0.0)),
+        }
+        total_prob = sum(self.corruption_probs.values())
+        if total_prob <= 0:
+            raise ValueError("corruption probabilities must sum to > 0")
+        self.corruption_probs = {k: v / total_prob for k, v in self.corruption_probs.items()}
+        tokenizer_helper = WhisperTokenizerHelper(data_cfg.get("tokenizer", {}))
+        if tokenizer_helper.mask_id is None:
+            raise ValueError("Tokenizer must define a mask token for discrete training")
+        self.mask_token_id = tokenizer_helper.mask_id
+        self.allowed_random_ids = tokenizer_helper.allowed_random_ids
         self.stepwise_cfg = train_cfg.get("stepwise", {})
         self.stepwise_enabled = bool(self.stepwise_cfg.get("enabled", False))
 
@@ -76,6 +92,9 @@ class FlowMatchingModule(pl.LightningModule):
         masked = tokens.clone()
         mask_positions = torch.zeros_like(tokens, dtype=torch.float32)
         actual_ratios = torch.zeros(tokens.size(0), device=tokens.device)
+        probs = self.corruption_probs
+        mask_prob = probs.get("mask", 1.0)
+        rand_prob = probs.get("random", 0.0)
         for idx in range(tokens.size(0)):
             candidates = torch.nonzero(candidate_mask[idx], as_tuple=False).squeeze(-1)
             total = candidates.numel()
@@ -88,8 +107,16 @@ class FlowMatchingModule(pl.LightningModule):
                 continue
             perm = torch.randperm(total, device=tokens.device)
             selected = candidates[perm[:num_to_mask]]
-            masked[idx, selected] = self.mask_token_id
-            mask_positions[idx, selected] = 1.0
+            u = torch.rand(num_to_mask, device=tokens.device)
+            mask_idx = selected[u < mask_prob]
+            random_idx = selected[(u >= mask_prob) & (u < mask_prob + rand_prob)]
+            masked[idx, mask_idx] = self.mask_token_id
+            if random_idx.numel() > 0:
+                random_ids = torch.randint(0, len(self.allowed_random_ids), (random_idx.numel(),), device=tokens.device)
+                random_tokens = torch.tensor(self.allowed_random_ids, device=tokens.device)[random_ids]
+                masked[idx, random_idx] = random_tokens
+            changed_idx = torch.cat([mask_idx, random_idx])
+            mask_positions[idx, changed_idx] = 1.0
             actual_ratios[idx] = num_to_mask / total
         return masked, mask_positions, actual_ratios
 

@@ -76,3 +76,4 @@ Discrete masked-diffusion ASR prototype that reuses the Whisper encoder as the a
 ## License
 - Whisper checkpoints follow the original OpenAI license; ensure compliance when distributing weights.
 - Code will adopt an open-source license (TBD) before release.
+- **Corruption** – Forward diffusion randomly turns tokens into `[MASK]` or other admissible text tokens (excluding special/timestamp IDs) according to configurable probabilities (`mask`, `random`, `keep`).
