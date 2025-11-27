@@ -59,6 +59,10 @@ class FlowInferencePipeline:
         self.high_mask_top_k = topk_cfg.get("high_mask_top_k", 0)
         self.mid_mask_top_k = topk_cfg.get("mid_mask_top_k", 0)
         self.low_mask_top_k = topk_cfg.get("low_mask_top_k", 0)
+        refine_cfg = sampler_cfg.get("refine", {})
+        self.refine_enabled = bool(refine_cfg.get("enabled", False))
+        self.refine_tokens = int(refine_cfg.get("tokens", 0))
+        self.refine_entropy_threshold = float(refine_cfg.get("entropy_threshold", 0.0))
 
     @torch.no_grad()
     def __call__(self, audio_path: str | Path, language: Optional[str] = None) -> Dict[str, str]:
@@ -102,6 +106,8 @@ class FlowInferencePipeline:
         if total_candidates == 0:
             return decoded
 
+        mode = (self.sampler_cfg.get("mode", "greedy").lower())
+        sampling_enabled = mode.startswith("sample")
         for target_ratio in self.mask_schedule[1:]:
             mask_positions = (decoded == self.mask_token_id) & candidate_mask
             current_mask = int(mask_positions.sum().item())
@@ -117,12 +123,19 @@ class FlowInferencePipeline:
                 continue
             masked_indices = torch.nonzero(mask_positions[0], as_tuple=False).squeeze(-1)
             masked_logits = logits[0, masked_indices]
-            vocab_ids = self._sample_tokens(masked_logits, to_reveal, current_ratio)
-            chosen_positions = masked_indices[: vocab_ids.size(0)]
+            num_pos = min(to_reveal, masked_indices.size(0))
+            confidence = masked_logits.max(dim=-1).values
+            _, pos_idx = torch.topk(confidence, k=num_pos)
+            chosen_positions = masked_indices[pos_idx]
+            vocab_ids = self._sample_tokens(masked_logits[pos_idx], num_pos, current_ratio, sampling_enabled)
             decoded[0, chosen_positions] = vocab_ids
+        if self.refine_enabled and decoded.eq(self.mask_token_id).sum().item() == 0:
+            decoded = self._refine_pass(decoded, token_mask, flow_mask, encoder_hidden_states, sampling_enabled)
         return decoded
 
-    def _select_sampling_params(self, current_ratio: float) -> Tuple[Optional[int], float]:
+    def _select_sampling_params(self, current_ratio: float, sampling_enabled: bool) -> Tuple[Optional[int], float]:
+        if not sampling_enabled:
+            return None, 1.0
         if not self.use_topk_temperature:
             return None, 1.0
         if current_ratio > self.high_mask_threshold:
@@ -131,11 +144,14 @@ class FlowInferencePipeline:
             return (self.mid_mask_top_k or None), self.mid_mask_temperature
         return (self.low_mask_top_k or None), self.low_mask_temperature
 
-    def _sample_tokens(self, masked_logits: torch.Tensor, to_reveal: int, current_ratio: float) -> torch.Tensor:
+    def _sample_tokens(self, masked_logits: torch.Tensor, to_reveal: int, current_ratio: float, sampling_enabled: bool) -> torch.Tensor:
         if to_reveal <= 0:
             return torch.tensor([], device=self.device, dtype=torch.long)
-        top_k, temperature = self._select_sampling_params(current_ratio)
+        top_k, temperature = self._select_sampling_params(current_ratio, sampling_enabled)
         logits = masked_logits.clone()
+        if not sampling_enabled:
+            vocab_ids = logits.argmax(dim=-1)
+            return vocab_ids[:to_reveal]
         indices = None
         if top_k is not None and top_k > 0:
             top_k = min(top_k, logits.size(-1))
@@ -150,6 +166,41 @@ class FlowInferencePipeline:
         else:
             vocab_ids = sampled.squeeze(-1)
         return vocab_ids[:to_reveal]
+
+    def _refine_pass(
+        self,
+        decoded: torch.Tensor,
+        token_mask: torch.Tensor,
+        flow_mask: torch.Tensor,
+        encoder_hidden_states: torch.Tensor,
+        sampling_enabled: bool,
+    ) -> torch.Tensor:
+        if self.refine_tokens <= 0:
+            return decoded
+        candidate_mask = flow_mask.bool()[0]
+        if candidate_mask.sum().item() == 0:
+            return decoded
+        t_tensor = torch.tensor([0.0], device=self.device)
+        logits = self.model.decode(decoded, token_mask, encoder_hidden_states, t_tensor)[0]
+        probs = torch.softmax(logits, dim=-1)
+        entropy = -(probs * torch.log(probs.clamp_min(1e-9))).sum(dim=-1)
+        entropy = entropy * candidate_mask.float()
+        if self.refine_entropy_threshold > 0.0:
+            entropy = torch.where(entropy >= self.refine_entropy_threshold, entropy, torch.zeros_like(entropy))
+        num_candidates = int(min(self.refine_tokens, (entropy > 0).sum().item()))
+        if num_candidates <= 0:
+            return decoded
+        values, idx = torch.topk(entropy, k=num_candidates)
+        idx = idx[values > 0]
+        if idx.numel() == 0:
+            return decoded
+        decoded = decoded.clone()
+        decoded[0, idx] = self.mask_token_id
+        logits = self.model.decode(decoded, token_mask, encoder_hidden_states, t_tensor)[0]
+        masked_logits = logits[idx]
+        vocab_ids = self._sample_tokens(masked_logits, idx.numel(), 0.0, sampling_enabled)
+        decoded[0, idx[: vocab_ids.size(0)]] = vocab_ids
+        return decoded
 
     def _finalize_tokens(self, tokens: torch.Tensor, prefix_len: int) -> list[int]:
         seq = tokens[0].tolist()

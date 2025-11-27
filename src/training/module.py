@@ -54,11 +54,6 @@ class FlowMatchingModule(pl.LightningModule):
         if total_prob <= 0:
             raise ValueError("corruption probabilities must sum to > 0")
         self.corruption_probs = {k: v / total_prob for k, v in self.corruption_probs.items()}
-        tokenizer_helper = WhisperTokenizerHelper(data_cfg.get("tokenizer", {}))
-        if tokenizer_helper.mask_id is None:
-            raise ValueError("Tokenizer must define a mask token for discrete training")
-        self.mask_token_id = tokenizer_helper.mask_id
-        self.allowed_random_ids = tokenizer_helper.allowed_random_ids
         self.stepwise_cfg = train_cfg.get("stepwise", {})
         self.stepwise_enabled = bool(self.stepwise_cfg.get("enabled", False))
 
