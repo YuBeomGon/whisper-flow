@@ -5,10 +5,13 @@ How to run the sampler and evaluate outputs.
 ## Sampler
 - Initialize all non-prefix positions as `[MASK]`.
 - Define a mask schedule (e.g., `[1.0, 0.9, 0.8, ..., 0.0]`) that determines how many masks remain after each iteration.
+- Optional top-k/temperature schedule:
+  - Enable in `configs/inference/default.yaml` under `sampler.top_k_temperature` to use a higher temperature and top-k sampling for early/high-mask steps, gradually annealing to greedy decoding as masks diminish.
 - At each step:
   - Run the discrete diffusion decoder with the current sequence and timestep.
-  - Select the `to_reveal = current_mask - target_mask` most confident masked tokens (greedy for now) and unmask them.
+  - Select the `to_reveal = current_mask - target_mask` tokens via the configured sampling strategy (greedy or top-k/temperature) and unmask them.
   - Repeat until no masks remain.
+- Optional partial re-masking (`sampler.refine`): after the main loop, re-mask a small number of low-confidence tokens (based on entropy or max probability) and run one more refinement step.
 
 ## Decoding
 - After the final step, trim output at the first `<|endoftext|>`, skipping `<|mask|>`/`<|pad|>` tokens; optionally keep timestamps for diagnostics.

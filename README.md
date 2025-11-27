@@ -33,6 +33,7 @@ Discrete masked-diffusion ASR prototype that reuses the Whisper encoder as the a
      --config configs/inference/default.yaml \
      --audio path/to/audio.wav
    ```
+   - `configs/inference/default.yaml` exposes advanced sampler options (`top_k_temperature`, `refine`) to enable stochastic top-k sampling and final-step partial re-masking. Leave them disabled to recover the greedy baseline.
 5. **Batch Evaluation (WER/CER)**
    ```bash
    python -m src.cli.evaluate \
@@ -72,6 +73,7 @@ Discrete masked-diffusion ASR prototype that reuses the Whisper encoder as the a
   - [ ] Add top-k/temperature/PDD-style sampler support.
   - [ ] Instrument train/inference parity on staged mask ratios.
 - Future enhancements (not in v0): AR-to-diffusion distillation, audio-conditioned middle distributions, EMA samplers, multilingual fine-tuning, better timestamp supervision.
+- **Corruption** – Forward diffusion randomly turns tokens into `[MASK]` or other admissible text tokens (excluding special/timestamp IDs) according to configurable probabilities (`mask`, `random`, `keep`).
 
 ## License
 - Whisper checkpoints follow the original OpenAI license; ensure compliance when distributing weights.
