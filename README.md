@@ -28,12 +28,15 @@ Discrete masked-diffusion ASR prototype that reuses the Whisper encoder as the a
    python -m src.cli.train --config configs/train/libri100.yaml
    ```
 4. **Inference / Sampling**
-   ```bash
-   python -m src.cli.sample \
-     --config configs/inference/default.yaml \
-     --audio path/to/audio.wav
-   ```
-   - `configs/inference/default.yaml` exposes advanced sampler options (`top_k_temperature`, `refine`) to enable stochastic top-k sampling and final-step partial re-masking. Leave them disabled to recover the greedy baseline.
+ ```bash
+ python -m src.cli.sample \
+   --config configs/inference/default.yaml \
+   --audio path/to/audio.wav
+ ```
+   - `configs/inference/default.yaml` exposes sampler options:
+     - `sampler.mode` (`greedy` vs `sample`) toggles between deterministic argmax decoding and stochastic top-k/temperature sampling.
+     - `sampler.top_k_temperature` configures the staged temperature/top-k schedule used only in sampling mode.
+     - `sampler.refine` re-masks a handful of high-entropy tokens at the end and decodes them one more time for a light refinement step.
 5. **Batch Evaluation (WER/CER)**
    ```bash
    python -m src.cli.evaluate \
