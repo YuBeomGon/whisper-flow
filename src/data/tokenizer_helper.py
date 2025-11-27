@@ -26,8 +26,8 @@ class WhisperTokenizerHelper:
         cache_dir = cfg.get("cache_dir")
         self.tokenizer = WhisperTokenizer.from_pretrained(hf_id, cache_dir=cache_dir)
         self.max_text_tokens = cfg.get("max_text_tokens", 448)
-        self.pad_id = cfg.get("pad_token_id", self.tokenizer.pad_token_id)
-        self.eot_id = cfg.get("eot_token_id", self.tokenizer.eos_token_id)
+        self.pad_id = self.tokenizer.pad_token_id
+        self.eot_id = self.tokenizer.eos_token_id
         mask_token = cfg.get("mask_token")
         if mask_token:
             self.tokenizer.add_special_tokens({"additional_special_tokens": [mask_token]})

@@ -10,6 +10,7 @@ from typing import Dict, List
 
 import torch
 from torch.utils.data import Dataset
+from transformers import WhisperTokenizer
 
 
 class DummyLibriDataset(Dataset):
@@ -18,15 +19,19 @@ class DummyLibriDataset(Dataset):
     def __init__(self, cfg: Dict, split: str):
         dataset_cfg = cfg.get("dataset", {})
         tokenizer_cfg = cfg.get("tokenizer", {})
+        tokenizer = WhisperTokenizer.from_pretrained(
+            tokenizer_cfg.get("hf_id", "openai/whisper-small"),
+            cache_dir=tokenizer_cfg.get("cache_dir"),
+        )
 
         dummy_counts = dataset_cfg.get("dummy_samples", {})
         self.length = dummy_counts.get(split, 512)
         self.n_mels = cfg.get("features", {}).get("n_mels", 80)
         self.n_frames = cfg.get("features", {}).get("n_frames", 3000)
         self.max_tokens = tokenizer_cfg.get("max_text_tokens", 448)
-        self.vocab_size = tokenizer_cfg.get("vocab_size", 51865)
-        self.pad_id = tokenizer_cfg.get("pad_token_id", 0)
-        self.eot_id = tokenizer_cfg.get("eot_token_id", self.vocab_size - 1)
+        self.vocab_size = len(tokenizer)
+        self.pad_id = tokenizer.pad_token_id
+        self.eot_id = tokenizer.eos_token_id
 
     def __len__(self) -> int:
         return self.length

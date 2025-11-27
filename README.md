@@ -5,7 +5,7 @@ Discrete masked-diffusion ASR prototype that reuses the Whisper encoder as the a
 ## Overview
 - **Encoder** – frozen Whisper encoder checkpoint loaded via Hugging Face Transformers (optional unfreeze hooks later).
 - **Decoder** – Whisper decoder blocks with the causal mask removed, augmented with time-conditioning to run a masked diffusion process over discrete tokens (Whisfusion/MDM style).
-- **Training objective** – cross-entropy on `[MASK]` positions with inverse-`t` weighting and staged mask ratios (low→mid→high mask) plus optional stepwise `y_{t_hi}→y_{t_lo}` loss.
+- **Training objective** – cross-entropy on corrupted positions (`[MASK]`, random replacements, forced EOT corruption) with inverse-`t` weighting and staged mask ratios (low→mid→high mask) plus optional stepwise `y_{t_hi}→y_{t_lo}` loss.
 - **Logging** – MLflow tracking (default local backend) plus optional TensorBoard.
 - **Current scope** – LibriSpeech train-960 for bring-up; multilingual/timestamp fidelity and distillation come later.
 - **Training stack** – PyTorch Lightning for the training loop, Hugging Face Transformers for model/tokenizer utilities.

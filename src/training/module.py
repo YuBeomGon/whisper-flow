@@ -95,6 +95,8 @@ class FlowMatchingModule(pl.LightningModule):
             total = candidates.numel()
             if total == 0:
                 continue
+            eot_idx = int(candidates[-1].item())
+            eot_in_candidates = True
             ratio = float(torch.clamp(ratios[idx], min=0.0, max=1.0).item())
             num_to_mask = max(min_masks, int(math.ceil(ratio * total)))
             num_to_mask = min(num_to_mask, total)
@@ -102,7 +104,12 @@ class FlowMatchingModule(pl.LightningModule):
                 continue
             perm = torch.randperm(total, device=tokens.device)
             selected = candidates[perm[:num_to_mask]]
+            if int((selected == eot_idx).sum().item()) == 0 and num_to_mask < total:
+                selected[0] = eot_idx
             u = torch.rand(num_to_mask, device=tokens.device)
+            eot_sel = selected == eot_idx
+            if eot_sel.any():
+                u[eot_sel] = mask_prob * 0.5
             mask_idx = selected[u < mask_prob]
             random_idx = selected[(u >= mask_prob) & (u < mask_prob + rand_prob)]
             masked[idx, mask_idx] = self.mask_token_id
@@ -111,6 +118,10 @@ class FlowMatchingModule(pl.LightningModule):
                 random_tokens = torch.tensor(self.allowed_random_ids, device=tokens.device)[random_ids]
                 masked[idx, random_idx] = random_tokens
             changed_idx = torch.cat([mask_idx, random_idx])
+            if eot_in_candidates and int((changed_idx == eot_idx).sum().item()) == 0:
+                mask_idx = torch.cat([mask_idx, torch.tensor([eot_idx], device=tokens.device)])
+                masked[idx, eot_idx] = self.mask_token_id
+                changed_idx = torch.cat([mask_idx, random_idx])
             mask_positions[idx, changed_idx] = 1.0
             actual_ratios[idx] = num_to_mask / total
         return masked, mask_positions, actual_ratios
