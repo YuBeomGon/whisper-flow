@@ -6,7 +6,7 @@ Role: LightningModule that wraps FlowMatchingModel, computes flow loss, and conf
 from __future__ import annotations
 
 import math
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 import pytorch_lightning as pl
 import torch
@@ -54,6 +54,7 @@ class FlowMatchingModule(pl.LightningModule):
         if total_prob <= 0:
             raise ValueError("corruption probabilities must sum to > 0")
         self.corruption_probs = {k: v / total_prob for k, v in self.corruption_probs.items()}
+        self.random_dup_frac = float(corruption_cfg.get("random_dup_neighbor_frac", 0.0))
         self.stepwise_cfg = train_cfg.get("stepwise", {})
         self.stepwise_enabled = bool(self.stepwise_cfg.get("enabled", False))
 
@@ -114,9 +115,25 @@ class FlowMatchingModule(pl.LightningModule):
             random_idx = selected[(u >= mask_prob) & (u < mask_prob + rand_prob)]
             masked[idx, mask_idx] = self.mask_token_id
             if random_idx.numel() > 0:
-                random_ids = torch.randint(0, len(self.allowed_random_ids), (random_idx.numel(),), device=tokens.device)
-                random_tokens = torch.tensor(self.allowed_random_ids, device=tokens.device)[random_ids]
-                masked[idx, random_idx] = random_tokens
+                dup_mask = (
+                    torch.rand(random_idx.size(0), device=tokens.device) < self.random_dup_frac
+                    if self.random_dup_frac > 0.0
+                    else torch.zeros(random_idx.size(0), dtype=torch.bool, device=tokens.device)
+                )
+                dup_positions = random_idx[dup_mask]
+                global_positions = random_idx[~dup_mask]
+                if dup_positions.numel() > 0:
+                    dup_tokens = self._duplicate_neighbors(tokens[idx], dup_positions)
+                    masked[idx, dup_positions] = dup_tokens
+                if global_positions.numel() > 0:
+                    random_ids = torch.randint(
+                        0,
+                        len(self.allowed_random_ids),
+                        (global_positions.numel(),),
+                        device=tokens.device,
+                    )
+                    random_tokens = torch.tensor(self.allowed_random_ids, device=tokens.device)[random_ids]
+                    masked[idx, global_positions] = random_tokens
             changed_idx = torch.cat([mask_idx, random_idx])
             if eot_in_candidates and int((changed_idx == eot_idx).sum().item()) == 0:
                 mask_idx = torch.cat([mask_idx, torch.tensor([eot_idx], device=tokens.device)])
@@ -125,6 +142,25 @@ class FlowMatchingModule(pl.LightningModule):
             mask_positions[idx, changed_idx] = 1.0
             actual_ratios[idx] = num_to_mask / total
         return masked, mask_positions, actual_ratios
+
+    def _duplicate_neighbors(self, sequence: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+        if positions.numel() == 0:
+            return torch.empty(0, device=sequence.device, dtype=sequence.dtype)
+        dup_tokens = torch.empty(positions.size(0), device=sequence.device, dtype=sequence.dtype)
+        max_idx = sequence.size(0) - 1
+        for i, pos in enumerate(positions.tolist()):
+            if max_idx <= 0:
+                neighbor_idx = 0
+            elif pos <= 0:
+                neighbor_idx = 1 if max_idx >= 1 else 0
+            elif pos >= max_idx:
+                neighbor_idx = max_idx - 1
+            else:
+                use_prev = bool(torch.rand((), device=sequence.device) < 0.5)
+                neighbor_idx = pos - 1 if use_prev else pos + 1
+            neighbor_idx = max(0, min(max_idx, neighbor_idx))
+            dup_tokens[i] = sequence[neighbor_idx]
+        return dup_tokens
 
     def _current_mask_ratio_range(self) -> tuple[float, float]:
         if self.masking_schedule:
