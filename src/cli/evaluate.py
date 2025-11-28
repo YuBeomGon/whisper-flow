@@ -34,6 +34,19 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional JSONL path to store per-utterance predictions",
     )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Override checkpoint path without editing the config file",
+    )
+    parser.add_argument(
+        "--sampler-mode",
+        type=str,
+        choices=["greedy", "sample"],
+        default=None,
+        help="Override sampler.mode (greedy/sample) without editing the config file",
+    )
     return parser.parse_args()
 
 
@@ -49,6 +62,10 @@ def resolve_manifest(train_cfg: dict, split: str) -> str:
 def main() -> None:
     args = parse_args()
     inf_cfg = load_yaml(args.config)
+    if args.checkpoint:
+        inf_cfg["checkpoint"] = args.checkpoint
+    if args.sampler_mode:
+        inf_cfg.setdefault("sampler", {})["mode"] = args.sampler_mode
     train_cfg_path = inf_cfg.get("train_config")
     if not train_cfg_path:
         raise ValueError("Inference config must set 'train_config'")

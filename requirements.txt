@@ -12,3 +12,4 @@ jiwer>=3.0.0
 # Tooling
 black>=24.3.0
 ruff>=0.4.2
+openai-whisper

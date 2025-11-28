@@ -30,13 +30,16 @@ python -m src.cli.sample \
 
 ## Batch Evaluation
 - Evaluate an entire split and capture WER/CER:
-  ```bash
-  python -m src.cli.evaluate \
-    --config configs/inference/default.yaml \
-    --split test \
-    --output outputs/eval/test-clean.jsonl
-  ```
+```bash
+python -m src.cli.evaluate \
+  --config configs/inference/default.yaml \
+  --split test \
+  --output outputs/eval/test-clean.jsonl \
+  --checkpoint checkpoints/libri100/flow-whisper-epoch=15.ckpt \
+  --sampler-mode sample
+```
 - Metrics print to stdout; optionally review per-utterance predictions in the JSONL.
+- `--checkpoint` / `--sampler-mode` let you swap checkpoints or toggle decoding style without editing the YAML config.
 
 ## Debugging Tips
 - Log per-step predictions / mask ratios to ensure the schedule is honored.
