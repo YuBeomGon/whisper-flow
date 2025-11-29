@@ -6,12 +6,15 @@ Role: LightningModule that wraps FlowMatchingModel, computes flow loss, and conf
 from __future__ import annotations
 
 import math
+import os
 from typing import Any, Dict, Tuple
 
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from src.data.tokenizer_helper import WhisperTokenizerHelper
+from src.evaluation.evaluator import ManifestEvaluator
+from src.inference.pipeline import FlowInferencePipeline
 from src.models.flow_whisper import FlowMatchingModel
 
 
@@ -60,6 +63,16 @@ class FlowMatchingModule(pl.LightningModule):
         pad_weights_cfg = self.masking_cfg.get("pad_weights", {})
         self.pad_sampling_weight = float(pad_weights_cfg.get("sampling", 1.0))
         self.pad_loss_weight = float(pad_weights_cfg.get("loss", 1.0))
+        eval_cfg = train_cfg.get("evaluation", {})
+        dataset_cfg = data_cfg.get("dataset", {})
+        manifests = dataset_cfg.get("manifests", {})
+        self.dev_cer_manifest = eval_cfg.get("dev_cer_manifest") or manifests.get("val_cer")
+        if self.dev_cer_manifest is not None and not os.path.exists(self.dev_cer_manifest):
+            raise FileNotFoundError(f"dev CER manifest not found: {self.dev_cer_manifest}")
+        self.dev_cer_every = int(eval_cfg.get("dev_cer_every_n_epochs", 1))
+        self.dev_cer_max_utts = eval_cfg.get("dev_cer_max_utterances")
+        self.dev_sampler_cfg = train_cfg.get("inference", {}).get("sampler", {})
+        self._dev_pipeline = None
 
     def _compute_ce_loss(
         self,
@@ -191,6 +204,27 @@ class FlowMatchingModule(pl.LightningModule):
             dup_tokens[i] = sequence[neighbor_idx]
         return dup_tokens
 
+    def _evaluate_dev_cer(self) -> None:
+        if not self.dev_cer_manifest:
+            return
+        if self._dev_pipeline is None:
+            sampler_cfg = self.dev_sampler_cfg or {}
+            self._dev_pipeline = FlowInferencePipeline(
+                model=self.model,
+                data_cfg=self.data_cfg,
+                sampler_cfg=sampler_cfg,
+                device=self.device,
+            )
+        evaluator = ManifestEvaluator(
+            pipeline=self._dev_pipeline,
+            manifest_path=self.dev_cer_manifest,
+            output_path=None,
+        )
+        metrics = evaluator.run(max_utterances=self.dev_cer_max_utts)
+        cer_value = metrics.get("cer")
+        if cer_value is not None:
+            self.log("dev_sample/cer", cer_value, prog_bar=False, logger=True)
+
     def _current_mask_ratio_range(self) -> tuple[float, float]:
         if self.masking_schedule:
             current_epoch = getattr(self, "current_epoch", 0)
@@ -219,6 +253,17 @@ class FlowMatchingModule(pl.LightningModule):
             torch.tensor(max_ratio, device=device),
             prog_bar=True,
         )
+
+    def on_validation_epoch_end(self) -> None:
+        trainer = getattr(self, "trainer", None)
+        if (
+            self.dev_cer_manifest
+            and self.dev_cer_every > 0
+            and (self.current_epoch + 1) % self.dev_cer_every == 0
+            and trainer is not None
+            and trainer.global_rank == 0
+        ):
+            self._evaluate_dev_cer()
 
     def _sample_mask_to_gt(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         min_ratio, max_ratio = self._current_mask_ratio_range()

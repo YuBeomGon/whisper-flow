@@ -37,7 +37,7 @@ class ManifestEvaluator:
         with self.manifest_path.open("r", encoding="utf-8") as handle:
             return sum(1 for line in handle if line.strip())
 
-    def run(self) -> Dict[str, float]:
+    def run(self, max_utterances: Optional[int] = None) -> Dict[str, float]:
         references: list[str] = []
         predictions: list[str] = []
 
@@ -49,9 +49,11 @@ class ManifestEvaluator:
         progress = tqdm(total=total_records, desc="Evaluating", unit="utt") if total_records else None
 
         with self.manifest_path.open("r", encoding="utf-8") as handle:
-            for line in handle:
+            for idx, line in enumerate(handle):
                 if not line.strip():
                     continue
+                if max_utterances is not None and idx >= max_utterances:
+                    break
                 record = json.loads(line)
                 audio_path = record["audio_path"]
                 reference = record["text"]

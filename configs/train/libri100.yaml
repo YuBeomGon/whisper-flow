@@ -2,7 +2,7 @@
 seed: 1337
 precision: 16-mixed
 accelerator: gpu
-devices: 5
+devices: 1
 strategy: ddp_find_unused_parameters_true # ddp_find_unused_parameters_true, deepspeed_stage_2 
 max_epochs: 20
 val_check_interval: 1.0
@@ -65,13 +65,21 @@ logging:
 
 checkpoints:
   dirpath: checkpoints/libri960-1
-  save_top_k: 10
-  monitor: val/loss
+  save_top_k: 5
+  monitor: dev_sample/cer
   mode: min
 
 evaluation:
   metrics: [wer, cer]
   dataset_split: val
+  dev_cer_manifest: data/manifests/librispeech/dev-sample-1000.jsonl
+  dev_cer_every_n_epochs: 1
+  dev_cer_max_utterances: 1000
+
+inference:
+  sampler:
+    mask_schedule: [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0]
+    mode: greedy
 
 notes: |
   Start with batch size 8 per GPU. Increase once stability verified.
