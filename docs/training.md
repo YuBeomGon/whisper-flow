@@ -11,6 +11,14 @@ Guidelines for running the Lightning training loop with MLflow logging.
 - Optional stepwise loss (`y_{t_hi}→y_{t_lo}`) focusing on positions newly unmasked between two mask ratios.
 - Stage the mask ratios from low→mid→high so the model regularly trains on inference-like states.
 - To reduce repetitive outputs, the corruption stage can inject **neighbor duplication noise**: when a token is randomly replaced, copy its left/right neighbor instead of sampling from the whole vocab. The model is then explicitly trained to undo sequences like `WORD WORD` or `A A B`, encouraging it to “de-duplicate” during inference.
+- `pad_weights` allows you to keep PAD positions active in attention/diffusion while down-weighting them during sampling and loss:
+  ```yaml
+  masking:
+    pad_weights:
+      sampling: 0.3   # PAD positions are sampled for corruption less often
+      loss: 0.4       # PAD CE contribution is scaled down
+  ```
+  With this setup the decoder always sees full-length sequences (prefix + text + PAD), but PAD recovery has a smaller impact on the loss.
 
 ## Optimizer / Schedules
 - Start with AdamW (β₁=0.9, β₂=0.98, weight decay 0.01).

@@ -57,7 +57,7 @@ class WhisperTokenizerHelper:
 
     def encode_text(
         self, text: str, language: Optional[str]
-    ) -> Tuple[torch.LongTensor, torch.FloatTensor, torch.FloatTensor]:
+    ) -> Tuple[torch.LongTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
         prefix = self.build_prefix(language)
         text_tokens = self.tokenizer.encode(text, add_special_tokens=False)
 
@@ -67,19 +67,24 @@ class WhisperTokenizerHelper:
         text_tokens = text_tokens[:max_body]
 
         token_ids = prefix + text_tokens + [self.eot_id]
-        token_mask = [1.0] * len(token_ids)
-        flow_mask = [0.0] * len(prefix) + [1.0] * (len(token_ids) - len(prefix))
+        length_mask = [1.0] * len(token_ids)
 
         pad_length = self.max_text_tokens - len(token_ids)
+        if pad_length < 0:
+            raise ValueError("max_text_tokens too small for prefix+text+EOT")
+
         if pad_length > 0:
             token_ids.extend([self.pad_id] * pad_length)
-            token_mask.extend([0.0] * pad_length)
-            flow_mask.extend([0.0] * pad_length)
+            length_mask.extend([0.0] * pad_length)
+
+        token_mask = [1.0] * self.max_text_tokens
+        flow_mask = [0.0] * len(prefix) + [1.0] * (self.max_text_tokens - len(prefix))
 
         tokens = torch.tensor(token_ids, dtype=torch.long)
         token_mask_tensor = torch.tensor(token_mask, dtype=torch.float32)
         flow_mask_tensor = torch.tensor(flow_mask, dtype=torch.float32)
-        return tokens, token_mask_tensor, flow_mask_tensor
+        length_mask_tensor = torch.tensor(length_mask, dtype=torch.float32)
+        return tokens, token_mask_tensor, flow_mask_tensor, length_mask_tensor
 
     def build_sampling_tokens(
         self, language: Optional[str]

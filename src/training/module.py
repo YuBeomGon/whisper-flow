@@ -57,12 +57,16 @@ class FlowMatchingModule(pl.LightningModule):
         self.random_dup_frac = float(corruption_cfg.get("random_dup_neighbor_frac", 0.0))
         self.stepwise_cfg = train_cfg.get("stepwise", {})
         self.stepwise_enabled = bool(self.stepwise_cfg.get("enabled", False))
+        pad_weights_cfg = self.masking_cfg.get("pad_weights", {})
+        self.pad_sampling_weight = float(pad_weights_cfg.get("sampling", 1.0))
+        self.pad_loss_weight = float(pad_weights_cfg.get("loss", 1.0))
 
     def _compute_ce_loss(
         self,
         logits: torch.Tensor,
         targets: torch.Tensor,
         mask_positions: torch.Tensor,
+        length_mask: torch.Tensor,
         sample_weights: torch.Tensor | None = None,
     ) -> torch.Tensor:
         vocab = logits.size(-1)
@@ -71,7 +75,14 @@ class FlowMatchingModule(pl.LightningModule):
             targets.view(-1),
             reduction="none",
         ).view_as(mask_positions)
-        weight_mask = mask_positions
+        supervised_mask = mask_positions > 0.5
+        if not supervised_mask.any():
+            return ce.new_tensor(0.0)
+        pad_mask = supervised_mask & (length_mask <= 0.5)
+        nonpad_mask = supervised_mask & (~pad_mask)
+        weight_mask = torch.zeros_like(mask_positions)
+        weight_mask[nonpad_mask] = 1.0
+        weight_mask[pad_mask] = self.pad_loss_weight
         if sample_weights is not None:
             weight_mask = weight_mask * sample_weights.unsqueeze(-1)
         denom = weight_mask.sum().clamp_min(1.0)
@@ -82,6 +93,7 @@ class FlowMatchingModule(pl.LightningModule):
         self,
         tokens: torch.Tensor,
         candidate_mask: torch.Tensor,
+        length_mask: torch.Tensor,
         ratios: torch.Tensor,
         min_masks: int,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -96,19 +108,36 @@ class FlowMatchingModule(pl.LightningModule):
             total = candidates.numel()
             if total == 0:
                 continue
-            eot_idx = int(candidates[-1].item())
-            eot_in_candidates = True
+            length_vals = length_mask[idx, candidates]
+            nonpad_locs = length_vals > 0.5
+            nonpad_candidates = candidates[nonpad_locs]
+            if nonpad_candidates.numel() > 0:
+                eot_idx = int(nonpad_candidates[-1].item())
+                eot_in_candidates = True
+            else:
+                eot_idx = None
+                eot_in_candidates = False
             ratio = float(torch.clamp(ratios[idx], min=0.0, max=1.0).item())
             num_to_mask = max(min_masks, int(math.ceil(ratio * total)))
             num_to_mask = min(num_to_mask, total)
             if num_to_mask == 0:
                 continue
-            perm = torch.randperm(total, device=tokens.device)
-            selected = candidates[perm[:num_to_mask]]
-            if int((selected == eot_idx).sum().item()) == 0 and num_to_mask < total:
+            length_vals = length_mask[idx, candidates]
+            weights = torch.ones(total, device=tokens.device)
+            if self.pad_sampling_weight != 1.0:
+                pad_locs = length_vals <= 0.5
+                weights[pad_locs] = self.pad_sampling_weight
+            weight_sum = weights.sum()
+            if weight_sum.item() <= 0:
+                weights.fill_(1.0)
+                weight_sum = weights.sum()
+            probs_sel = weights / weight_sum
+            select_idx = torch.multinomial(probs_sel, num_to_mask, replacement=False)
+            selected = candidates[select_idx]
+            if eot_in_candidates and int((selected == eot_idx).sum().item()) == 0 and num_to_mask < total:
                 selected[0] = eot_idx
             u = torch.rand(num_to_mask, device=tokens.device)
-            eot_sel = selected == eot_idx
+            eot_sel = (selected == eot_idx) if eot_in_candidates else torch.zeros_like(selected, dtype=torch.bool)
             if eot_sel.any():
                 u[eot_sel] = mask_prob * 0.5
             mask_idx = selected[u < mask_prob]
@@ -195,10 +224,11 @@ class FlowMatchingModule(pl.LightningModule):
         min_ratio, max_ratio = self._current_mask_ratio_range()
         min_masks = int(self.masking_cfg.get("min_masks", 1))
         tokens = batch["tokens"]
-        candidate_mask = (batch["flow_mask"] > 0.5) & (batch["token_mask"] > 0.5)
+        candidate_mask = batch["flow_mask"] > 0.5
+        length_mask = batch["length_mask"]
         ratios = torch.empty(tokens.size(0), device=tokens.device).uniform_(min_ratio, max_ratio)
         masked, mask_positions, actual_ratios = self._apply_mask_ratio(
-            tokens, candidate_mask, ratios, min_masks
+            tokens, candidate_mask, length_mask, ratios, min_masks
         )
         return {
             "decoder_tokens_mask": masked,
@@ -208,7 +238,7 @@ class FlowMatchingModule(pl.LightningModule):
 
     def _sample_stepwise_masks(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         tokens = batch["tokens"]
-        candidate_mask = (batch["flow_mask"] > 0.5) & (batch["token_mask"] > 0.5)
+        candidate_mask = batch["flow_mask"] > 0.5
         device = tokens.device
         hi_range = self.stepwise_cfg.get("hi_ratio", [0.4, 0.9])
         hi_min, hi_max = float(hi_range[0]), float(hi_range[1])
@@ -281,6 +311,7 @@ class FlowMatchingModule(pl.LightningModule):
             logits,
             batch["tokens"],
             batch["mask_positions_mask"],
+            batch["length_mask"],
             sample_weights,
         )
         self.log(f"{phase}/mask_to_gt", loss, on_epoch=True, prog_bar=(phase == "train"))
@@ -302,6 +333,7 @@ class FlowMatchingModule(pl.LightningModule):
             logits,
             batch["decoder_tokens_step_lo"],
             batch["mask_positions_step"],
+            batch["length_mask"],
             None,
         )
         self.log(f"{phase}/stepwise", loss, on_epoch=True, prog_bar=False)

@@ -82,12 +82,13 @@ class LibriSpeechManifestDataset(Dataset):
 
         text = entry[self.text_column]
         language = entry.get(self.language_column)
-        tokens, token_mask, flow_mask = self.tokenizer.encode_text(text, language)
+        tokens, token_mask, flow_mask, length_mask = self.tokenizer.encode_text(text, language)
         return {
             "input_features": features,
             "tokens": tokens,
             "token_mask": token_mask,
             "flow_mask": flow_mask,
+            "length_mask": length_mask,
         }
 
     @staticmethod
@@ -96,9 +97,11 @@ class LibriSpeechManifestDataset(Dataset):
         tokens = torch.stack([item["tokens"] for item in batch], dim=0)
         token_mask = torch.stack([item["token_mask"] for item in batch], dim=0)
         flow_mask = torch.stack([item["flow_mask"] for item in batch], dim=0)
+        length_mask = torch.stack([item["length_mask"] for item in batch], dim=0)
         return {
             "input_features": features,
             "tokens": tokens,
             "token_mask": token_mask,
             "flow_mask": flow_mask,
+            "length_mask": length_mask,
         }
