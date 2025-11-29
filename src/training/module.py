@@ -102,6 +102,34 @@ class FlowMatchingModule(pl.LightningModule):
         loss = (ce * weight_mask).sum() / denom
         return loss
 
+    def _compute_repetition_unlikelihood(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        mask_positions: torch.Tensor,
+        length_mask: torch.Tensor,
+        weight: float,
+    ) -> torch.Tensor:
+        if weight <= 0.0:
+            return logits.new_tensor(0.0)
+        B, L, V = logits.shape
+        probs = torch.softmax(logits, dim=-1)
+        left_targets = targets.roll(shifts=1, dims=1)
+        idx = torch.arange(L, device=logits.device)
+        not_first = idx.unsqueeze(0) > 0
+        supervised = (mask_positions > 0.5) & (length_mask > 0.5) & not_first
+        different_from_left = targets != left_targets
+        neg_mask = supervised & different_from_left
+        if not neg_mask.any():
+            return logits.new_tensor(0.0)
+        neg_ids = left_targets
+        p_left = probs.gather(-1, neg_ids.unsqueeze(-1)).squeeze(-1)
+        p_left = p_left[neg_mask]
+        eps = 1e-6
+        p_left = p_left.clamp(min=0.0, max=1.0 - eps)
+        ul = -torch.log(1.0 - p_left + eps)
+        return weight * ul.mean()
+
     def _apply_mask_ratio(
         self,
         tokens: torch.Tensor,
@@ -352,15 +380,26 @@ class FlowMatchingModule(pl.LightningModule):
         sample_weights = None
         if self.loss_cfg.get("inverse_t_weight", False):
             sample_weights = 1.0 / batch["t_mask"].clamp_min(1e-3)
-        loss = self._compute_ce_loss(
+        ce_loss = self._compute_ce_loss(
             logits,
             batch["tokens"],
             batch["mask_positions_mask"],
             batch["length_mask"],
             sample_weights,
         )
-        self.log(f"{phase}/mask_to_gt", loss, on_epoch=True, prog_bar=(phase == "train"))
-        return loss
+        rep_weight = float(self.loss_cfg.get("repetition_weight", 0.0))
+        rep_loss = self._compute_repetition_unlikelihood(
+            logits,
+            batch["tokens"],
+            batch["mask_positions_mask"],
+            batch["length_mask"],
+            rep_weight,
+        )
+        total = ce_loss + rep_loss
+        self.log(f"{phase}/mask_to_gt", total, on_epoch=True, prog_bar=(phase == "train"))
+        if rep_weight > 0.0:
+            self.log(f"{phase}/rep_ul", rep_loss, on_epoch=True, prog_bar=False)
+        return total
 
     def _run_stepwise_loss(
         self,
